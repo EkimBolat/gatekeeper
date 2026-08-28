@@ -12,7 +12,7 @@ A backend-focused learning project: the traffic-control infrastructure that sits
 
 ## Highlights
 
-- **Concurrency-safe seat locking** — Redis `SETNX` + TTL guarantees exactly one winner when multiple requests race for the same seat, proven with a test that fires 50 concurrent goroutines at it.
+- **Concurrency-safe seat locking** — Redis `SETNX` + TTL guarantees exactly one winner when multiple requests race for the same seat. Proven twice: a test that fires 50 concurrent goroutines at it in-process, and a [load test](#load-test-against-the-live-deployment) that races 100 real HTTP clients against the live Render deployment — same result, one winner, zero errors.
 - **Purchase saga** — the order flow charges payment, confirms the seat, and rolls back (releases the seat, no charge) if any step fails, instead of leaving things in a half-done state.
 - **Virtual waiting room** — a queue that admits users in small batches and issues a signed token; both the gateway and Seat Locking itself reject any lock request that doesn't carry a valid one, so skipping the line isn't possible even by calling a service's URL directly.
 - **Locked-down internal APIs** — confirming a seat as sold and charging/refunding a payment are only ever meant to happen server-to-server, as steps in the saga. Those endpoints require a shared secret that only the Order Service holds, so they can't be called directly to bypass payment.
@@ -91,6 +91,29 @@ go test -tags=integration ./... -v
 ```
 
 The one worth reading is `TestLockSeat_ConcurrentCallers_OnlyOneWins` in `services/seat-locking/lock_test.go` — it fires 50 concurrent goroutines at the same seat and asserts exactly one of them wins the lock. That's the core guarantee of the whole project, proven with a test instead of just a claim.
+
+### Load test against the live deployment
+
+That test proves the guarantee in-process, against a local Redis client. `scripts/loadtest` proves the same guarantee over real HTTP, against the actual deployed services on Render — admitting real users through the real waiting room, then releasing all of them at once to race for one seat:
+
+```bash
+cd scripts/loadtest
+go run . -gateway https://api-gateway-u36u.onrender.com -seat-locking https://seat-locking.onrender.com -n 100
+```
+
+A real run against the live deployment:
+
+```
+=== Results ===
+racers:      100
+winners:     1  (must be exactly 1)
+errors:      0
+avg latency: 867ms
+
+PASS: exactly one winner out of 100 simultaneous real HTTP requests.
+```
+
+100 independent HTTP clients, 100 independent admission tokens, hit the actual public API at the same instant — one winner, zero errors. Racing goes straight at Seat Locking's own URL rather than through the gateway, since the gateway's per-IP rate limiter (a different, already-covered guarantee) would otherwise reject a genuine simultaneous burst from a single test machine before it ever reached the lock. `-n` is a flag, not a hardcoded ceiling — the waiting room's admission rate is the actual bottleneck on how large a run is practical, not anything this tool does.
 
 ## Status
 
