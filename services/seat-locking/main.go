@@ -52,8 +52,13 @@ func main() {
 
 	internalSecret := getenv("INTERNAL_SECRET", "dev-internal-secret-change-me")
 
+	jwtSecret := getenv("JWT_SECRET", "dev-secret-change-me")
+	if jwtSecret == "dev-secret-change-me" {
+		log.Println("warning: using default JWT_SECRET, set a real one before deploying")
+	}
+
 	// REST: /seats/{eventId}/{seatId}/lock|release|confirm
-	mux.HandleFunc("/seats/", seatsHandler(rdb, internalSecret))
+	mux.HandleFunc("/seats/", seatsHandler(rdb, internalSecret, []byte(jwtSecret)))
 
 	log.Printf("seat-locking service listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, corsMiddleware(mux)); err != nil {

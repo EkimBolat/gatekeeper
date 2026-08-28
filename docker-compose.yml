@@ -59,6 +59,7 @@ services:
       - PORT=8082
       - REDIS_ADDR=redis:6379
       - INTERNAL_SECRET=change-me-in-production
+      - JWT_SECRET=change-me-in-production
     depends_on:
       - redis
 

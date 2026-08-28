@@ -14,7 +14,7 @@ A backend-focused learning project: the traffic-control infrastructure that sits
 
 - **Concurrency-safe seat locking** — Redis `SETNX` + TTL guarantees exactly one winner when multiple requests race for the same seat, proven with a test that fires 50 concurrent goroutines at it.
 - **Purchase saga** — the order flow charges payment, confirms the seat, and rolls back (releases the seat, no charge) if any step fails, instead of leaving things in a half-done state.
-- **Virtual waiting room** — a queue that admits users in small batches and issues a signed token; the gateway rejects any seat lock or order that doesn't carry one, so there's no skipping the line.
+- **Virtual waiting room** — a queue that admits users in small batches and issues a signed token; both the gateway and Seat Locking itself reject any lock request that doesn't carry a valid one, so skipping the line isn't possible even by calling a service's URL directly.
 - **Locked-down internal APIs** — confirming a seat as sold and charging/refunding a payment are only ever meant to happen server-to-server, as steps in the saga. Those endpoints require a shared secret that only the Order Service holds, so they can't be called directly to bypass payment.
 - **Live seat map** — seat status streams to every connected client over WebSocket as it changes.
 - **Multi-event catalog** — the demo lists several concerts and movies to choose from; `eventId` is just an arbitrary string as far as the backend is concerned, so every listed event gets its own fully independent queue, seat map, and locks for free.
@@ -96,14 +96,14 @@ The one worth reading is `TestLockSeat_ConcurrentCallers_OnlyOneWins` in `servic
 
 The core system is done — all 6 services work end to end, including the full purchase saga with compensating actions on failure.
 
-- [x] seat-locking — locking with Redis `SETNX` + TTL, live seat status over WebSocket, ownership-checked confirm/release
+- [x] seat-locking — locking with Redis `SETNX` + TTL, live seat status over WebSocket, ownership-checked confirm/release, verifies the admission token itself instead of trusting the gateway alone
 - [x] waiting-room — queueing system, admission tokens
 - [x] order — saga flow (charge → confirm seat, release/refund on failure)
 - [x] payment — fake payment service, idempotent by orderId
 - [x] notification — consumes order events from RabbitMQ, logs mock notifications
 - [x] api-gateway — reverse proxy to all services, per-IP rate limiting, admission-token enforcement
 - [x] internal-only endpoints — seat confirm/release and payment charge/refund require a shared secret, so they can't be called directly by a client
-- [x] tests — concurrency test on the seat lock, saga tests on the order flow, auth tests on the internal-only endpoints
+- [x] tests — concurrency test on the seat lock, saga tests on the order flow, auth tests on the internal-only and admission-gated endpoints
 - [x] CI (GitHub Actions): builds and tests all 6 services, plus integration tests for seat-locking/order, on every push
 
 ## License

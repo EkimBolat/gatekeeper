@@ -22,7 +22,7 @@ func parseSeatPath(path string) (eventID, seatID, action string, ok bool) {
 	return parts[1], parts[2], parts[3], true
 }
 
-func seatsHandler(rdb *redis.Client, internalSecret string) http.HandlerFunc {
+func seatsHandler(rdb *redis.Client, internalSecret string, jwtSecret []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// /seats/{eventId} (no seatId/action) -- GET for a snapshot of every
 		// locked/sold seat, DELETE to wipe all of them (the demo's "full
@@ -70,6 +70,10 @@ func seatsHandler(rdb *redis.Client, internalSecret string) http.HandlerFunc {
 		ctx := context.Background()
 		switch action {
 		case "lock":
+			if !hasValidAdmission(r, eventID, body.UserID, jwtSecret) {
+				http.Error(w, "missing or invalid admission token -- join the waiting room first", http.StatusUnauthorized)
+				return
+			}
 			acquired, err := lockSeat(ctx, rdb, eventID, seatID, body.UserID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
