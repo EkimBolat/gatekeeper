@@ -6,7 +6,7 @@
 
 Traffic-control infrastructure for high-demand on-sales: Redis-backed seat locking plus a virtual waiting room guarantee no seat ever sells twice, even under thousands of concurrent requests. Inspired by Ticketmaster's 2022 Taylor Swift on-sale crash.
 
-**[Try the live demo](https://ekimbolat.github.io/gatekeeper/demo/seat-map.html)** — join a queue, get admitted, pick a seat, check out, against 5 real services on Render. (First request may take ~50s — free instances sleep when idle.)
+**[Try the live demo](https://ekimbolat.github.io/gatekeeper/demo/seat-map.html)** — join a queue, get admitted, pick a seat, check out, all against 5 real services on Render. (First request may take ~50s — free instances sleep when idle.)
 
 ![Live seat map demo](./demo/screenshot-v2.png)
 
