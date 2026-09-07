@@ -136,6 +136,7 @@
       <input id="userId">
     </div>
     <button id="joinBtn" onclick="joinQueue()">Join Queue</button>
+    <p id="joinWaitNote" class="sub" style="display: none; margin: 10px 0 0;">This can take a little while the first time -- the waiting room service may be waking up from sleep on Render's free tier.</p>
   </div>
 
   <!-- Screen 2: Waiting room -->
@@ -185,7 +186,8 @@
       <label for="simulateFailure">Simulate a declined card (to see the saga release the seat)</label>
     </div>
     <p id="simulateWarning" class="sub" style="display: none; color: #f87171; margin: -8px 0 16px; font-weight: 600;">⚠ Checked -- this payment will be declined on purpose.</p>
-    <button onclick="submitOrder()">Pay <span id="payButtonPrice"></span></button>
+    <button id="payBtn" onclick="submitOrder()">Pay <span id="payButtonPrice"></span></button>
+    <p id="payWaitNote" class="sub" style="display: none; margin: 10px 0 0;">This can take up to a couple of minutes the first time -- the order and payment services may both be waking up from sleep on Render's free tier. Please don't click Pay again, it's still working.</p>
   </div>
 
   <!-- Screen 5: Confirmation -->
@@ -313,6 +315,8 @@
     const joinBtn = document.getElementById("joinBtn");
     if (joinBtn.disabled) return;
     joinBtn.disabled = true;
+    joinBtn.innerHTML = `<span class="spinner" style="width:14px; height:14px; border-width:2px; margin-right:8px;"></span>Joining...`;
+    document.getElementById("joinWaitNote").style.display = "block";
     if (pollTimer) clearInterval(pollTimer);
 
     try {
@@ -324,8 +328,15 @@
       pollTimer = setInterval(pollStatus, 2000);
     } catch (err) {
       log(`failed to join queue: ${err} (backend may still be waking up, try again)`);
-      joinBtn.disabled = false;
+      resetJoinButton();
     }
+  }
+
+  function resetJoinButton() {
+    const joinBtn = document.getElementById("joinBtn");
+    joinBtn.disabled = false;
+    joinBtn.innerHTML = "Join Queue";
+    document.getElementById("joinWaitNote").style.display = "none";
   }
 
   // ---- Screen 2: Waiting room ----
@@ -456,11 +467,31 @@
   function goToCheckout() {
     const price = `$${(state.priceCents / 100).toFixed(2)}`;
     document.getElementById("checkoutPrice").textContent = price;
-    document.getElementById("payButtonPrice").textContent = price;
+    resetPayButton(price);
     showScreen("checkout");
   }
 
+  // Restores the Pay button to its normal, clickable resting state.
+  // Called both when the checkout screen is (re)entered and after a
+  // failed submission, so a stale "Processing..." never gets stuck.
+  function resetPayButton(price) {
+    const payBtn = document.getElementById("payBtn");
+    payBtn.disabled = false;
+    payBtn.innerHTML = `Pay <span id="payButtonPrice">${price}</span>`;
+    document.getElementById("payWaitNote").style.display = "none";
+  }
+
+  let orderInFlight = false;
+
   async function submitOrder() {
+    if (orderInFlight) return; // a click already submitted this order -- ignore repeats
+    orderInFlight = true;
+
+    const payBtn = document.getElementById("payBtn");
+    payBtn.disabled = true;
+    payBtn.innerHTML = `<span class="spinner" style="width:14px; height:14px; border-width:2px; margin-right:8px;"></span>Processing...`;
+    document.getElementById("payWaitNote").style.display = "block";
+
     const simulateFailure = document.getElementById("simulateFailure").checked;
     // Payment only ever fails for one of two reasons: this checkbox was
     // checked, or the amount was <= 0. Logging exactly what's being sent
@@ -483,6 +514,9 @@
       showScreen("confirmation");
     } catch (err) {
       log(`order request failed: ${err}`);
+      resetPayButton(`$${(state.priceCents / 100).toFixed(2)}`);
+    } finally {
+      orderInFlight = false;
     }
   }
 
@@ -648,7 +682,7 @@
     state.selectedSeat = null;
     state.lastOrderId = null;
     document.getElementById("userId").value = "user-" + Math.random().toString(36).slice(2, 7);
-    document.getElementById("joinBtn").disabled = false;
+    resetJoinButton();
     document.getElementById("checkoutBtn").disabled = true;
     document.getElementById("simulateFailure").checked = false;
     document.getElementById("ticketBox").hidden = true;
