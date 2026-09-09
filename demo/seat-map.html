@@ -396,17 +396,29 @@
   function applyStatus(seatId, status, lockedBy) {
     const el = seatEls[seatId];
     if (!el) return;
-    if (seatId === state.selectedSeat) {
-      // Only keep it blue if this update is confirming *my own* lock/sale.
-      // If it was released (lock expired, or my order failed) or someone
-      // else now holds/bought it, this seat isn't mine anymore -- forget
-      // it so future updates (like someone else's "sold") aren't ignored.
-      const stillMine = (status === "locked" || status === "sold") && lockedBy === state.userId;
-      if (stillMine) return; // keep it blue
+
+    // Whether *this* update says the seat is held by me -- checked against
+    // lockedBy directly, not against state.selectedSeat. Those can drift
+    // apart: if a second lock attempt resolves before the first one's own
+    // WebSocket confirmation arrives, selectedSeat has already moved on to
+    // the newer seat by the time the first seat's "locked (by me)" event
+    // shows up, and it would otherwise get miscolored orange -- as if
+    // someone else had grabbed it -- instead of staying blue.
+    const mine = lockedBy === state.userId && (status === "locked" || status === "sold");
+
+    if (seatId === state.selectedSeat && !mine) {
+      // I thought this was my seat, but it's been released (lock expired,
+      // my order failed) or someone else now holds/bought it -- forget it
+      // so future updates (like someone else's "sold") aren't ignored.
       state.selectedSeat = null;
       document.getElementById("checkoutBtn").disabled = true;
     }
+
     el.classList.remove("locked", "sold", "mine");
+    if (mine) {
+      el.classList.add("mine");
+      return;
+    }
     if (status === "locked") el.classList.add("locked");
     if (status === "sold") el.classList.add("sold");
   }
@@ -424,12 +436,24 @@
     };
   }
 
+  let lockInFlight = false;
+
   async function lockSeat(seatId) {
+    // Clicking a second seat before the first lock request comes back is
+    // exactly what produced the false-orange bug: state.selectedSeat would
+    // jump to whichever request resolved last, leaving an earlier seat
+    // genuinely locked by this user but no longer recognized as "mine" by
+    // applyStatus. One lock attempt at a time avoids that race outright.
+    if (lockInFlight) {
+      log(`still working on your last pick -- try again in a moment`);
+      return;
+    }
     const el = seatEls[seatId];
     if (el.classList.contains("locked") || el.classList.contains("sold")) {
       log(`${seatId} is not available`);
       return;
     }
+    lockInFlight = true;
     try {
       const data = await api(`/seats/${state.eventId}/${seatId}/lock`, { method: "POST", body: JSON.stringify({ userId: state.userId }) });
       log(`tried to lock ${seatId} -> locked: ${data.locked}`);
@@ -446,6 +470,8 @@
       }
     } catch (err) {
       log(`lock request failed: ${err}`);
+    } finally {
+      lockInFlight = false;
     }
   }
 
